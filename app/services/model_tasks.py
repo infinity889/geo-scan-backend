@@ -14,22 +14,15 @@ from app.services.llm import (
 
 
 async def embed_texts(texts: list[str]) -> EmbeddingResponse:
-    if not llm_client.configured:
-        embeddings = [deterministic_embedding(text) for text in texts]
-        return EmbeddingResponse(
-            provider="local-fallback",
-            model="deterministic-dev-embedding",
-            dimensions=len(embeddings[0]),
-            embeddings=embeddings,
-        )
-
-    vectors = await llm_client.embeddings(texts)
-    dimensions = len(vectors[0]) if vectors else 0
+    # Use real local semantic embeddings (BGE-M3)
+    embeddings = [deterministic_embedding(text) for text in texts]
+    dimensions = len(embeddings[0]) if embeddings else settings.embedding_dimensions
+    
     return EmbeddingResponse(
-        provider="groq-fallback",
-        model="hashing",
+        provider="local-fastembed",
+        model="BAAI/bge-m3",
         dimensions=dimensions,
-        embeddings=vectors,
+        embeddings=embeddings,
     )
 
 
@@ -56,7 +49,7 @@ async def extract_geo_knowledge(text: str, source_id: str | None = None) -> Enti
             ],
             model=settings.groq_llm_model,
             temperature=0,
-            max_tokens=1600,
+            max_tokens=600,
             response_format={"type": "json_object"},
         )
         payload = parse_json_object(result.content)

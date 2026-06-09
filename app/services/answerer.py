@@ -22,10 +22,10 @@ async def build_answer(query: ChatQuery) -> ChatAnswer:
         if emb_res.embeddings and len(emb_res.embeddings) > 0:
             query_embedding = emb_res.embeddings[0]
         else:
-            query_embedding = [0.0] * 32
+            query_embedding = [0.0] * settings.embedding_dimensions
     except Exception as e:
         print(f"Vector search failed: {e}")
-        query_embedding = [0.0] * 32
+        query_embedding = [0.0] * settings.embedding_dimensions
 
     store_citations = vector_store.search(query.question, query_embedding, k=5)
     citations.extend(store_citations)
@@ -41,10 +41,64 @@ async def build_answer(query: ChatQuery) -> ChatAnswer:
 
     system_prompt = (
         "Вы опытный ИИ-ассистент геолога. Отвечайте на русском языке. "
-        "Если предоставлен контекст, опирайтесь на него. "
+        "Если предоставлен контекст (Grounded context или Graph context), опирайтесь на него. "
         "Если контекста нет, используйте свои собственные знания по геологии и нефтегазовому делу."
     )
-    user_prompt = f"Question:\n{query.question}\n\n{context_str}\n"
+
+    graph_context = ""
+    from app.db.session import is_db_enabled, get_session
+    from app.db.repository import graph_repo
+    
+    if is_db_enabled():
+        try:
+            # 1. Extract entities for graph lookup
+            extraction_prompt = f"Извлеки из геологического вопроса только ключевые сущности (месторождения, пласты, скважины, свиты). Верни JSON список строк. Вопрос: {query.question}"
+            extract_res = await llm_client.chat_completion(
+                [{"role": "user", "content": extraction_prompt}],
+                response_format={"type": "json_object"},
+                max_tokens=200
+            )
+            from app.services.llm import parse_json_object
+            entities_data = parse_json_object(extract_res.content)
+            # Assume json like {"entities": [...]} or just list
+            entities = entities_data.get("entities", []) if isinstance(entities_data, dict) else entities_data
+            
+            if entities and isinstance(entities, list):
+                with get_session() as session:
+                    # Search for these entities in graph
+                    found_nodes = []
+                    for ent in entities:
+                        # Simple case-insensitive search by label
+                        from sqlalchemy import select
+                        from app.db.models import GraphNodeRecord
+                        nodes = session.execute(
+                            select(GraphNodeRecord).where(GraphNodeRecord.label.ilike(f"%{ent}%"))
+                        ).scalars().all()
+                        found_nodes.extend(nodes)
+                    
+                    if found_nodes:
+                        graph_lines = ["Graph context (relationships):"]
+                        for node in found_nodes[:5]:
+                            # Get related edges
+                            from app.db.models import GraphEdgeRecord
+                            from sqlalchemy import or_
+                            edges = session.execute(
+                                select(GraphEdgeRecord).where(
+                                    or_(
+                                        GraphEdgeRecord.source_node_id == node.id,
+                                        GraphEdgeRecord.target_node_id == node.id
+                                    )
+                                )
+                            ).scalars().all()
+                            
+                            for edge in edges:
+                                graph_lines.append(f"- {edge.source_node_id} --({edge.label})--> {edge.target_node_id}")
+                        
+                        graph_context = "\n".join(graph_lines)
+        except Exception as graph_exc:
+            print(f"GraphRAG search failed: {graph_exc}")
+
+    user_prompt = f"Question:\n{query.question}\n\n{graph_context}\n\n{context_str}\n"
 
     if llm_client.configured:
         try:

@@ -3,6 +3,8 @@ from typing import Callable
 
 from pypdf import PdfReader
 
+from app.core.config import settings
+from app.services.llm import llm_client
 from app.services.model_tasks import embed_texts
 from app.services.vector_store import vector_store
 
@@ -80,54 +82,53 @@ async def process_document_async(
             all_pages = []
 
     if not all_chunks:
-        log_callback("No valid text found in document. Trying OCR fallback with PaddleOCR...")
+        log_callback("No valid text found in document. Trying Vision-LLM OCR with Groq...")
         try:
-            import os
+            import base64
             from pdf2image import convert_from_path
-            from paddleocr import PaddleOCR
-            import numpy as np
+            import io
+            from app.services.llm import llm_client
             
-            project_dir = Path(__file__).resolve().parent.parent.parent
-            bin_dir = project_dir / "bin"
-            poppler_path = str(bin_dir / "poppler" / "Library" / "bin")
+            # Note: poppler should be in system path or provided
+            log_callback("Converting PDF to images for Vision analysis...")
+            import time
+            pages = convert_from_path(file_path, dpi=120) 
             
-            if os.path.exists(poppler_path):
-                log_callback("Converting PDF to images...")
-                pages = convert_from_path(file_path, dpi=200, poppler_path=poppler_path)
+            for i, page in enumerate(pages):
+                if i >= 20:
+                    log_callback("Economy Mode: Stopping OCR at page 20.")
+                    break
+                    
+                log_callback(f"OCR: Analyzing page {i + 1}/{len(pages)} using {settings.groq_vision_model}...")
                 
-                log_callback(f"Found {len(pages)} pages. Initializing PaddleOCR...")
-                ocr_model = PaddleOCR(use_angle_cls=True, lang='ru', show_log=False)
+                # Convert PIL Image to base64
+                img_byte_arr = io.BytesIO()
+                page.save(img_byte_arr, format='JPEG', quality=75)
+                base64_image = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
+                data_url = f"data:image/jpeg;base64,{base64_image}"
                 
-                for i, page in enumerate(pages):
-                    log_callback(f"Running OCR on page {i + 1}/{len(pages)}...")
-                    
-                    # Convert PIL Image to numpy array
-                    img_array = np.array(page)
-                    
-                    # Run PaddleOCR
-                    result = ocr_model.ocr(img_array, cls=True)
-                    
-                    page_text = []
-                    if result:
-                        for res in result:
-                            if res:
-                                for line in res:
-                                    if len(line) == 2 and len(line[1]) >= 1:
-                                        text = line[1][0]
-                                        page_text.append(text)
-                    
-                    full_text = "\n".join(page_text)
+                try:
+                    res = await llm_client.ocr_image(data_url)
+                    full_text = res.content
                     if full_text and full_text.strip():
                         page_chunks = chunk_text(full_text)
                         all_chunks.extend(page_chunks)
                         all_pages.extend([str(i + 1)] * len(page_chunks))
-            else:
-                log_callback("Poppler binary not found. Please check bin directory.")
+                    
+                    # Small delay to respect Groq rate limits (free tier)
+                    time.sleep(0.5)
+                except Exception as page_exc:
+                    log_callback(f"Vision failed on page {i+1}: {page_exc}")
+                    if "429" in str(page_exc):
+                        log_callback("Rate limit reached. Waiting 10s...")
+                        time.sleep(10)
+                    continue
+
         except Exception as e:
-            log_callback(f"OCR failed: {e}")
+            log_callback(f"Vision OCR failed: {e}")
 
         if not all_chunks:
-            log_callback("No text found even after OCR attempt.")
+            log_callback("No text found even after Vision OCR attempt.")
             return
 
     log_callback(f"Generated {len(all_chunks)} chunks. Generating embeddings...")
@@ -143,7 +144,7 @@ async def process_document_async(
         except Exception as e:
             log_callback(f"Embedding failed at batch {i}: {e}")
             # Fallback to zeros just so we don't crash the whole pipeline
-            dimension = 32
+            dimension = settings.embedding_dimensions
             all_embeddings.extend([[0.0] * dimension for _ in batch_texts])
         
     log_callback("Storing in vector database...")
@@ -154,4 +155,26 @@ async def process_document_async(
         embeddings=all_embeddings,
         pages=all_pages
     )
-    log_callback("Indexing complete.")
+
+    # Economical NER: Analyze only first 2 chunks
+    from app.services.model_tasks import extract_geo_knowledge
+    log_callback("Extracting geological entities for GraphRAG...")
+    
+    entities_count = 0
+    for i, chunk in enumerate(all_chunks[:2]):
+        try:
+            res = await extract_geo_knowledge(chunk, source_id=document_id)
+            if res.entities or res.relations:
+                with get_session() as session:
+                    from app.db.repository import graph_repo
+                    graph_repo.add_extracted_knowledge(
+                        session, 
+                        document_id, 
+                        res.entities, 
+                        res.relations
+                    )
+                entities_count += len(res.entities)
+        except Exception as e:
+            log_callback(f"Graph extraction failed for chunk {i}: {e}")
+            
+    log_callback(f"Indexing complete. Extracted {entities_count} entities for Knowledge Graph.")

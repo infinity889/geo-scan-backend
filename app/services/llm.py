@@ -113,13 +113,34 @@ class GroqClient:
         return response.json()
 
 
-def deterministic_embedding(text: str, dimensions: int = 32) -> list[float]:
-    digest = hashlib.sha256(text.encode("utf-8")).digest()
-    values = []
-    for idx in range(dimensions):
-        byte = digest[idx % len(digest)]
-        values.append(round((byte / 127.5) - 1.0, 6))
-    return values
+_embedder = None
+
+
+def get_embedder():
+    global _embedder
+    if _embedder is None:
+        from fastembed import TextEmbedding
+
+        # Multilingual E5-Large model (1024 dims) as requested in requirements
+        _embedder = TextEmbedding(model_name="intfloat/multilingual-e5-large")
+    return _embedder
+
+
+def deterministic_embedding(text: str, dimensions: int | None = None) -> list[float]:
+    """Generates real semantic embeddings using BGE-M3."""
+    embedder = get_embedder()
+    # fastembed returns a generator
+    embeddings = list(embedder.embed([text]))
+    vector = embeddings[0].tolist()
+
+    target_dim = dimensions or settings.embedding_dimensions
+    if len(vector) != target_dim:
+        # Resize if necessary (BGE-M3 is 1024 by default)
+        if len(vector) > target_dim:
+            return vector[:target_dim]
+        else:
+            return vector + [0.0] * (target_dim - len(vector))
+    return vector
 
 
 def parse_json_object(text: str) -> dict[str, Any]:

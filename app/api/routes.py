@@ -28,6 +28,8 @@ from app.services.seed import (
     SOURCE_PREVIEWS,
 )
 from app.services.store import store
+from app.db.repository import figure_repo, graph_repo
+from app.db.session import get_session, is_db_enabled
 
 router = APIRouter()
 
@@ -119,14 +121,25 @@ def get_citation(citation_id: str) -> SourcePreview:
 
 @router.get("/graph", response_model=KnowledgeGraph, tags=["graph"])
 def get_graph() -> KnowledgeGraph:
+    if is_db_enabled():
+        with get_session() as session:
+            return graph_repo.get_graph(session)
     return KnowledgeGraph(nodes=GRAPH_NODES, edges=GRAPH_EDGES)
 
 
 @router.get("/figures", response_model=list[FigureSummary], tags=["figures"])
 def list_figures() -> list[FigureSummary]:
+    if is_db_enabled():
+        with get_session() as session:
+            return figure_repo.list_figures(session)
     return FIGURES
 
 
 @router.get("/metrics", response_model=MetricsReport, tags=["metrics"])
 def get_metrics() -> MetricsReport:
     return METRICS
+
+
+@router.delete("/documents/{document_id}", status_code=204, tags=["documents"])
+def delete_document(document_id: str) -> None:
+    store.delete_document(document_id)

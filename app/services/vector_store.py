@@ -1,11 +1,14 @@
-import uuid
 import json
-from pathlib import Path
-from typing import List, Dict, Any
 import math
+import uuid
+from pathlib import Path
+from typing import List
 
 from app.core.config import settings
+from app.db.repository import chunk_repo
+from app.db.session import get_session, is_db_enabled
 from app.domain.models import Citation
+
 
 def cosine_similarity(a: List[float], b: List[float]) -> float:
     dot_product = sum(x * y for x, y in zip(a, b))
@@ -15,23 +18,26 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
         return 0.0
     return dot_product / (norm_a * norm_b)
 
-class VectorStore:
+
+class JsonVectorStore:
+    """Fallback vector store for local development without PostgreSQL."""
+
     def __init__(self) -> None:
         self.db_path = settings.upload_dir / "simple_vector_store.json"
-        self.documents = []
+        self.documents: list[dict] = []
         self._load()
 
-    def _load(self):
+    def _load(self) -> None:
         if self.db_path.exists():
             try:
-                with open(self.db_path, "r", encoding="utf-8") as f:
-                    self.documents = json.load(f)
+                with open(self.db_path, encoding="utf-8") as handle:
+                    self.documents = json.load(handle)
             except Exception:
                 self.documents = []
 
-    def _save(self):
-        with open(self.db_path, "w", encoding="utf-8") as f:
-            json.dump(self.documents, f, ensure_ascii=False)
+    def _save(self) -> None:
+        with open(self.db_path, "w", encoding="utf-8") as handle:
+            json.dump(self.documents, handle, ensure_ascii=False)
 
     def add_chunks(
         self,
@@ -39,57 +45,43 @@ class VectorStore:
         document_name: str,
         chunks: List[str],
         embeddings: List[List[float]],
-        pages: List[str]
+        pages: List[str],
     ) -> None:
         if not chunks:
             return
-            
-        for i in range(len(chunks)):
-            self.documents.append({
-                "id": f"{document_id}-{i}",
-                "document_id": document_id,
-                "document_name": document_name,
-                "page": pages[i],
-                "chunk": chunks[i],
-                "embedding": embeddings[i]
-            })
-            
+
+        for index in range(len(chunks)):
+            self.documents.append(
+                {
+                    "id": f"{document_id}-{index}",
+                    "document_id": document_id,
+                    "document_name": document_name,
+                    "page": pages[index],
+                    "chunk": chunks[index],
+                    "embedding": embeddings[index],
+                }
+            )
         self._save()
 
     def search(self, query_text: str, embedding: List[float], k: int = 5) -> List[Citation]:
         if not self.documents:
             return []
-            
-        results = []
-        q_words = set([w.strip(',.?!"\'') for w in query_text.lower().split()])
-        
-        import re
-        target_pages = set(re.findall(r'\b\d+\b', query_text))
-        
+
+        q_words = {w.strip(',.?!"\'') for w in query_text.lower().split()}
+        results: list[tuple[float, dict]] = []
+
         for doc in self.documents:
             score = cosine_similarity(embedding, doc["embedding"])
-            
-            # Fallback to simple keyword overlap if embeddings are broken (e.g. out of credits)
             if score < 0.1 and q_words:
-                t_words = set([w.strip(',.?!"\'') for w in doc["chunk"].lower().split()])
+                t_words = {w.strip(',.?!"\'') for w in doc["chunk"].lower().split()}
                 overlap = len(q_words.intersection(t_words))
-                # Boost score based on overlap so it passes the threshold
-                score = max(score, min(1.0, overlap * 0.15))
-                
-            # Boost score if the user explicitly asked for this page number
-            if target_pages and str(doc["page"]) in target_pages:
-                # Add a strong boost so exact page matches always float to the top
-                score = min(1.0, score + 0.8)
-                
+                score = min(1.0, overlap * 0.15)
             results.append((score, doc))
-            
-        # Sort by highest score first
-        results.sort(key=lambda x: x[0], reverse=True)
-        top_k = results[:k]
-        
-        citations = []
-        for score, doc in top_k:
-            if score < 0.1: # Relaxed threshold
+
+        results.sort(key=lambda item: item[0], reverse=True)
+        citations: list[Citation] = []
+        for score, doc in results[:k]:
+            if score < 0.1:
                 continue
             citations.append(
                 Citation(
@@ -100,9 +92,44 @@ class VectorStore:
                     page=str(doc["page"]),
                     chunk_id=str(uuid.uuid4().hex)[:8],
                     quote=doc["chunk"],
-                    score=score
+                    score=score,
                 )
             )
         return citations
+
+
+class VectorStore:
+    def __init__(self) -> None:
+        self._fallback = JsonVectorStore()
+
+    def add_chunks(
+        self,
+        document_id: str,
+        document_name: str,
+        chunks: List[str],
+        embeddings: List[List[float]],
+        pages: List[str],
+    ) -> None:
+        if is_db_enabled():
+            with get_session() as session:
+                chunk_repo.add_chunks(
+                    session,
+                    document_id=document_id,
+                    document_name=document_name,
+                    chunks=chunks,
+                    embeddings=embeddings,
+                    pages=pages,
+                )
+            return
+        self._fallback.add_chunks(
+            document_id, document_name, chunks, embeddings, pages
+        )
+
+    def search(self, query_text: str, embedding: List[float], k: int = 5) -> List[Citation]:
+        if is_db_enabled():
+            with get_session() as session:
+                return chunk_repo.search(session, query_text, embedding, k=k)
+        return self._fallback.search(query_text, embedding, k=k)
+
 
 vector_store = VectorStore()

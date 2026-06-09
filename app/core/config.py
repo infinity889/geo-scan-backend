@@ -17,13 +17,20 @@ class Settings:
     )
     groq_vision_model: str = os.getenv(
         "GROQ_VISION_MODEL",
-        "llama-3.2-90b-vision-preview",
+        "llama-3.2-11b-vision-preview",
     )
     groq_llm_model: str = os.getenv(
         "GROQ_LLM_MODEL",
-        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
     )
     groq_timeout_seconds: float = float(os.getenv("GROQ_TIMEOUT_SECONDS", "30"))
+
+    database_url: str = os.getenv("DATABASE_URL", "")
+    embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1024"))
+
+    @property
+    def database_enabled(self) -> bool:
+        return bool(self.database_url)
 
     @property
     def groq_enabled(self) -> bool:
