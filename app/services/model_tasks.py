@@ -5,16 +5,16 @@ from app.domain.models import (
     ExtractedEntity,
     ExtractedRelation,
 )
-from app.services.openrouter import (
-    OpenRouterError,
+from app.services.llm import (
+    LLMError,
     deterministic_embedding,
-    openrouter_client,
+    llm_client,
     parse_json_object,
 )
 
 
 async def embed_texts(texts: list[str]) -> EmbeddingResponse:
-    if not openrouter_client.configured:
+    if not llm_client.configured:
         embeddings = [deterministic_embedding(text) for text in texts]
         return EmbeddingResponse(
             provider="local-fallback",
@@ -23,18 +23,18 @@ async def embed_texts(texts: list[str]) -> EmbeddingResponse:
             embeddings=embeddings,
         )
 
-    vectors = await openrouter_client.embeddings(texts)
+    vectors = await llm_client.embeddings(texts)
     dimensions = len(vectors[0]) if vectors else 0
     return EmbeddingResponse(
-        provider="openrouter",
-        model=settings.openrouter_embedding_model,
+        provider="groq-fallback",
+        model="hashing",
         dimensions=dimensions,
         embeddings=vectors,
     )
 
 
 async def extract_geo_knowledge(text: str, source_id: str | None = None) -> EntityExtractionResponse:
-    if not openrouter_client.configured:
+    if not llm_client.configured:
         return _fallback_geo_extraction(text)
 
     prompt = (
@@ -49,27 +49,27 @@ async def extract_geo_knowledge(text: str, source_id: str | None = None) -> Enti
         prompt += f" Source id: {source_id}."
 
     try:
-        result = await openrouter_client.chat_completion(
+        result = await llm_client.chat_completion(
             [
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": text},
             ],
-            model=settings.openrouter_llm_model,
+            model=settings.groq_llm_model,
             temperature=0,
             max_tokens=1600,
             response_format={"type": "json_object"},
         )
         payload = parse_json_object(result.content)
         return EntityExtractionResponse(
-            provider="openrouter",
+            provider="groq",
             model=result.model,
             entities=[ExtractedEntity(**item) for item in payload.get("entities", [])],
             relations=[ExtractedRelation(**item) for item in payload.get("relations", [])],
             raw=result.content,
         )
-    except (OpenRouterError, ValueError, TypeError):
+    except (LLMError, ValueError, TypeError):
         fallback = _fallback_geo_extraction(text)
-        return fallback.model_copy(update={"provider": "local-fallback-after-openrouter-error"})
+        return fallback.model_copy(update={"provider": "local-fallback-after-error"})
 
 
 def _fallback_geo_extraction(text: str) -> EntityExtractionResponse:

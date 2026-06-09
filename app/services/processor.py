@@ -143,11 +143,7 @@ async def process_document_async(
         except Exception as e:
             log_callback(f"Embedding failed at batch {i}: {e}")
             # Fallback to zeros just so we don't crash the whole pipeline
-            dimension = 1536  # typical
-            # if response and hasattr(response, "dimensions") and response.dimensions:
-            #     dimension = response.dimensions
-            # elif all_embeddings:
-            #     dimension = len(all_embeddings[0])
+            dimension = 32
             all_embeddings.extend([[0.0] * dimension for _ in batch_texts])
         
     log_callback("Storing in vector database...")

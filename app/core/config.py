@@ -10,30 +10,24 @@ class Settings:
     app_env: str = os.getenv("APP_ENV", "development")
     api_prefix: str = os.getenv("API_PREFIX", "/api/v1")
     upload_dir: Path = Path(os.getenv("UPLOAD_DIR", "data/uploads"))
-    openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
-    openrouter_base_url: str = os.getenv(
-        "OPENROUTER_BASE_URL",
-        "https://openrouter.ai/api/v1",
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    groq_base_url: str = os.getenv(
+        "GROQ_BASE_URL",
+        "https://api.groq.com/openai/v1",
     )
-    openrouter_referer: str = os.getenv("OPENROUTER_HTTP_REFERER", "")
-    openrouter_title: str = os.getenv("OPENROUTER_APP_TITLE", "Geo Scan KMG")
-    openrouter_ocr_model: str = os.getenv(
-        "OPENROUTER_OCR_MODEL",
-        "deepseek/deepseek-ocr-2",
+    groq_vision_model: str = os.getenv(
+        "GROQ_VISION_MODEL",
+        "llama-3.2-90b-vision-preview",
     )
-    openrouter_llm_model: str = os.getenv(
-        "OPENROUTER_LLM_MODEL",
-        "deepseek/deepseek-v4-flash",
+    groq_llm_model: str = os.getenv(
+        "GROQ_LLM_MODEL",
+        "llama-3.3-70b-versatile",
     )
-    openrouter_embedding_model: str = os.getenv(
-        "OPENROUTER_EMBEDDING_MODEL",
-        "baai/bge-m3",
-    )
-    openrouter_timeout_seconds: float = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "45"))
+    groq_timeout_seconds: float = float(os.getenv("GROQ_TIMEOUT_SECONDS", "30"))
 
     @property
-    def openrouter_enabled(self) -> bool:
-        return bool(self.openrouter_api_key)
+    def groq_enabled(self) -> bool:
+        return bool(self.groq_api_key)
 
     @cached_property
     def cors_origins(self) -> list[str]:

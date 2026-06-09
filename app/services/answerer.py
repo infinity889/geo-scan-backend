@@ -2,7 +2,7 @@ import uuid
 
 from app.core.config import settings
 from app.domain.models import ChatAnswer, ChatQuery, Citation
-from app.services.openrouter import OpenRouterError, openrouter_client
+from app.services.llm import LLMError, llm_client
 from app.services.seed import CITATIONS
 
 
@@ -22,16 +22,13 @@ async def build_answer(query: ChatQuery) -> ChatAnswer:
         if emb_res.embeddings and len(emb_res.embeddings) > 0:
             query_embedding = emb_res.embeddings[0]
         else:
-            query_embedding = [0.0] * 1536
+            query_embedding = [0.0] * 32
     except Exception as e:
         print(f"Vector search failed: {e}")
-        query_embedding = [0.0] * 1536
+        query_embedding = [0.0] * 32
 
     store_citations = vector_store.search(query.question, query_embedding, k=5)
     citations.extend(store_citations)
-
-    if not citations:
-        citations = seed_answer.citations
 
     if not citations:
         citations = seed_answer.citations
@@ -49,45 +46,37 @@ async def build_answer(query: ChatQuery) -> ChatAnswer:
     )
     user_prompt = f"Question:\n{query.question}\n\n{context_str}\n"
 
-    import os
-    groq_api_key = os.environ.get("GROQ_API_KEY", "")
-    if groq_api_key:
+    if llm_client.configured:
         try:
-            from groq import AsyncGroq
-            client = AsyncGroq(api_key=groq_api_key)
-            completion = await client.chat.completions.create(
+            completion = await llm_client.chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                model="llama-3.3-70b-versatile",
                 temperature=0.1,
-                max_tokens=1200,
+                max_tokens=1500,
             )
             return ChatAnswer(
                 id=f"a-{uuid.uuid4().hex[:10]}",
-                content=completion.choices[0].message.content,
+                content=completion.content,
                 mode="rag",
                 citations=citations,
                 provider="groq",
-                model="llama-3.3-70b-versatile",
+                model=completion.model,
                 confidence=0.9,
             )
         except Exception as e:
             print(f"Groq error: {e}")
             return seed_answer.model_copy(update={"provider": "groq-error"})
 
-    if not openrouter_client.configured:
-        return ChatAnswer(
-            id=f"a-{uuid.uuid4().hex[:10]}",
-            content=f"Найдены данные в базе, но ни Groq, ни OpenRouter не настроены.\n\nКонтекст:\n{context_str}",
-            mode="rag",
-            citations=citations,
-            confidence=0.8,
-            provider="local-fallback"
-        )
-        
-    return seed_answer.model_copy(update={"provider": "no-key-missing"})
+    return ChatAnswer(
+        id=f"a-{uuid.uuid4().hex[:10]}",
+        content=f"Найдены данные в базе, но Groq не настроен.\n\nКонтекст:\n{context_str}",
+        mode="rag",
+        citations=citations,
+        confidence=0.8,
+        provider="local-fallback"
+    )
 
 
 def _build_seed_answer(query: ChatQuery) -> ChatAnswer:
