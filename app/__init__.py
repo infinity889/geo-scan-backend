@@ -1,0 +1,1 @@
+"""Geo Scan FastAPI backend."""

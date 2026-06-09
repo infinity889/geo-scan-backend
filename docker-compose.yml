@@ -1,0 +1,19 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: development
+      BACKEND_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      UPLOAD_DIR: data/uploads
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_HTTP_REFERER: ${OPENROUTER_HTTP_REFERER:-http://localhost:5173}
+      OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-Geo Scan KMG}
+      OPENROUTER_OCR_MODEL: ${OPENROUTER_OCR_MODEL:-deepseek/deepseek-ocr-2}
+      OPENROUTER_LLM_MODEL: ${OPENROUTER_LLM_MODEL:-deepseek/deepseek-v4-flash}
+      OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL:-baai/bge-m3}
+      OPENROUTER_TIMEOUT_SECONDS: ${OPENROUTER_TIMEOUT_SECONDS:-45}
+    volumes:
+      - ./data:/app/data
