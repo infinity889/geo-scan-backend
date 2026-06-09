@@ -63,6 +63,9 @@ class VectorStore:
         results = []
         q_words = set([w.strip(',.?!"\'') for w in query_text.lower().split()])
         
+        import re
+        target_pages = set(re.findall(r'\b\d+\b', query_text))
+        
         for doc in self.documents:
             score = cosine_similarity(embedding, doc["embedding"])
             
@@ -71,7 +74,12 @@ class VectorStore:
                 t_words = set([w.strip(',.?!"\'') for w in doc["chunk"].lower().split()])
                 overlap = len(q_words.intersection(t_words))
                 # Boost score based on overlap so it passes the threshold
-                score = min(1.0, overlap * 0.15)
+                score = max(score, min(1.0, overlap * 0.15))
+                
+            # Boost score if the user explicitly asked for this page number
+            if target_pages and str(doc["page"]) in target_pages:
+                # Add a strong boost so exact page matches always float to the top
+                score = min(1.0, score + 0.8)
                 
             results.append((score, doc))
             
