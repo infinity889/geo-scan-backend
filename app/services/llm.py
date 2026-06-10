@@ -121,8 +121,8 @@ def get_embedder():
     if _embedder is None:
         from fastembed import TextEmbedding
 
-        # Multilingual E5-Large model (1024 dims) as requested in requirements
-        _embedder = TextEmbedding(model_name="intfloat/multilingual-e5-large")
+        # Multilingual MiniLM model (384 dims) for speed and reliability
+        _embedder = TextEmbedding(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     return _embedder
 
 

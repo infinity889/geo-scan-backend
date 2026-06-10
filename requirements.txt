@@ -1,46 +1,24 @@
-attrs==26.1.0
-autocommand==2.2.2
-certifi==2026.5.20
-cffi==2.0.0
-charset-normalizer==3.4.7
-cryptography==48.0.0
-cssselect==1.4.0
-dbus-python==1.4.0
-filelock==3.29.0
-gps==3.27.5
-i3ipc==2.2.1
-idna==3.18
-jaraco.collections==5.1.0
-jaraco.context==6.1.3.dev0+g098f39c91.d20260403
-jaraco.functools==4.1.0
-jaraco.text==4.0.0
-lit==22.1.6.dev0
-lxml==6.1.1
-Mako==1.3.11.dev0
-Markdown==3.10.2
-MarkupSafe==3.0.3
-mercurial==7.2.2
-meson==1.11.1
-more-itertools==11.1.0
-nftables==0.1
-nwg-displays==0.4.3
-packaging==26.2
-pkg_resources==81.0.0
-platformdirs==4.10.0
-pycairo==1.29.0
-pycparser==3.0
-Pygments==2.20.0
-PyGObject==3.56.3
-pyquery==2.0.1
-python-xlib==0.33
-pyxdg==0.28
-requests==2.34.2
-setuptools==82.0.1
-six==1.17.0
-tqdm==4.68.1
-typing_extensions==4.15.0
-urllib3==2.7.0
-VapourSynth==76
-wheel==0.47.0
-yt-dlp==2026.3.17
-yt-dlp-ejs==0.8.0
+# Core
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+
+# HTTP
+httpx>=0.27.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+pgvector>=0.3.0
+
+# PDF Processing
+pypdf>=4.0.0
+pdf2image>=1.17.0
+python-docx>=1.1.0
+
+# Embeddings
+fastembed>=0.4.0
+
+# Utilities
+python-multipart>=0.0.9

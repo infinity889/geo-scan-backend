@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.services.llm import llm_client
 from app.services.model_tasks import embed_texts
 from app.services.vector_store import vector_store
+from app.db.session import get_session
 
 def chunk_text(text: str, chunk_size: int = 400, overlap: int = 50) -> list[str]:
     words = text.split()
@@ -65,6 +66,10 @@ async def process_document_async(
             all_chunks.extend(page_chunks)
             all_pages.extend(["1"] * len(page_chunks))
             
+    elif file_path.suffix.lower() in [".png", ".jpg", ".jpeg"]:
+        log_callback("Opening Image file for Vision OCR...")
+        all_chunks = [] # Will be populated by Vision section below
+            
     else:
         log_callback(f"Unsupported file format for RAG indexing: {file_path.suffix}")
         return
@@ -77,51 +82,59 @@ async def process_document_async(
         letters_and_numbers = len(re.findall(r'[a-zA-Zа-яА-ЯёЁ0-9]', full_text))
         
         if total_extracted_len < len(reader.pages) * 50 or letters_and_numbers < total_extracted_len * 0.5:
-            log_callback(f"Extracted text appears incomplete or garbled (Len: {total_extracted_len}, Valid: {letters_and_numbers}). Trying OCR fallback...")
+            log_callback(f"Extracted [PDF] text appears incomplete or garbled. Trying OCR fallback...")
             all_chunks = []
             all_pages = []
 
     if not all_chunks:
-        log_callback("No valid text found in document. Trying Vision-LLM OCR with Groq...")
+        log_callback("No valid text found in document. Trying Vision-LLM OCR...")
         try:
             import base64
-            from pdf2image import convert_from_path
             import io
             from app.services.llm import llm_client
             
-            # Note: poppler should be in system path or provided
-            log_callback("Converting PDF to images for Vision analysis...")
-            import time
-            pages = convert_from_path(file_path, dpi=120) 
+            images_to_process = []
             
-            for i, page in enumerate(pages):
+            if file_path.suffix.lower() == ".pdf":
+                from pdf2image import convert_from_path
+                log_callback("Converting PDF to images for Vision analysis...")
+                images_to_process = convert_from_path(file_path, dpi=120)
+            elif file_path.suffix.lower() in [".png", ".jpg", ".jpeg"]:
+                from PIL import Image
+                images_to_process = [Image.open(file_path)]
+            else:
+                log_callback(f"OCR fallback is not supported for {file_path.suffix} files yet.")
+                return
+
+            import time
+            for i, page in enumerate(images_to_process):
                 if i >= 20:
                     log_callback("Economy Mode: Stopping OCR at page 20.")
                     break
                     
-                log_callback(f"OCR: Analyzing page {i + 1}/{len(pages)} using {settings.groq_vision_model}...")
+                log_callback(f"OCR: Analyzing page {i + 1}/{len(images_to_process)} using {settings.groq_vision_model}...")
                 
                 # Convert PIL Image to base64
                 img_byte_arr = io.BytesIO()
-                page.save(img_byte_arr, format='JPEG', quality=75)
+                page.convert('RGB').save(img_byte_arr, format='JPEG', quality=75)
                 base64_image = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
                 data_url = f"data:image/jpeg;base64,{base64_image}"
                 
                 try:
                     res = await llm_client.ocr_image(data_url)
-                    full_text = res.content
-                    if full_text and full_text.strip():
-                        page_chunks = chunk_text(full_text)
+                    extracted_text = res.content
+                    if extracted_text and extracted_text.strip():
+                        page_chunks = chunk_text(extracted_text)
                         all_chunks.extend(page_chunks)
                         all_pages.extend([str(i + 1)] * len(page_chunks))
                     
                     # Small delay to respect Groq rate limits (free tier)
-                    time.sleep(0.5)
+                    time.sleep(1.0)
                 except Exception as page_exc:
                     log_callback(f"Vision failed on page {i+1}: {page_exc}")
                     if "429" in str(page_exc):
-                        log_callback("Rate limit reached. Waiting 10s...")
-                        time.sleep(10)
+                        log_callback("Rate limit reached. Waiting 15s...")
+                        time.sleep(15)
                     continue
 
         except Exception as e:

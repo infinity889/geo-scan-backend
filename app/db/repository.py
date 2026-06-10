@@ -38,7 +38,7 @@ from app.domain.models import (
 from app.services.seed import FIGURES, GRAPH_EDGES, GRAPH_NODES, STEP_LOGS, initial_steps
 
 
-def _normalize_embedding(embedding: list[float], dimensions: int = 1024) -> list[float]:
+def _normalize_embedding(embedding: list[float], dimensions: int = 384) -> list[float]:
     if len(embedding) == dimensions:
         return embedding
     if len(embedding) > dimensions:

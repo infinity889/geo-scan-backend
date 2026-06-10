@@ -68,7 +68,7 @@ class DocumentChunk(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     chunk_type: Mapped[str] = mapped_column(String(64), nullable=False, default="text")
     chunk_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(1024))
+    embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(384))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
     )

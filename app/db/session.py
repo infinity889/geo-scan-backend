@@ -36,6 +36,9 @@ def init_db() -> None:
     with engine.begin() as connection:
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS content_tsvector tsvector"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS idx_chunks_fts ON document_chunks USING gin(content_tsvector)"))
 
 
 @contextmanager

@@ -26,7 +26,7 @@ class Settings:
     groq_timeout_seconds: float = float(os.getenv("GROQ_TIMEOUT_SECONDS", "30"))
 
     database_url: str = os.getenv("DATABASE_URL", "")
-    embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1024"))
+    embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "384"))
 
     @property
     def database_enabled(self) -> bool:

@@ -82,12 +82,12 @@ async def ask_question(query: ChatQuery) -> ChatAnswer:
 @router.get("/models/status", response_model=ModelStatus, tags=["models"])
 def get_model_status() -> ModelStatus:
     return ModelStatus(
-        provider="openrouter",
-        configured=settings.openrouter_enabled,
-        base_url=settings.openrouter_base_url,
-        llm_model=settings.openrouter_llm_model,
-        ocr_model=settings.openrouter_ocr_model,
-        embedding_model=settings.openrouter_embedding_model,
+        provider="groq",
+        configured=settings.groq_enabled,
+        base_url=settings.groq_base_url,
+        llm_model=settings.groq_llm_model,
+        ocr_model=settings.groq_vision_model,
+        embedding_model="local-fastembed/multilingual-e5-large",
     )
 
 
